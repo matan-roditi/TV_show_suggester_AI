@@ -5,6 +5,7 @@ from unittest.mock import patch, mock_open
 from src.matcher import fuzzy_match_shows
 from src.matcher import parse_user_input
 from src.data_handler import load_embeddings, save_embeddings, get_all_titles
+from src.recommender import calculate_average_vector, calculate_similarity_percentage, get_recommendations
 
 
 def test_parse_user_input_basic():
@@ -142,3 +143,126 @@ def test_load_embeddings_corrupted_file():
         with patch("pickle.load", side_effect=EOFError):
             with pytest.raises(EOFError):
                 load_embeddings("corrupt.pkl")
+
+# ==========================================
+# Recommendation Engine Tests
+# ==========================================
+
+# --- Vector Math Utilities ---
+
+def test_calculate_average_vector_basic():
+    """Verify simple mathematical average of two vectors."""
+    v1 = np.array([2.0, 4.0])
+    v2 = np.array([4.0, 8.0])
+    # Average should be [3.0, 6.0]
+    result = calculate_average_vector([v1, v2])
+    expected = np.array([3.0, 6.0])
+    assert np.allclose(result, expected)
+
+def test_calculate_average_vector_single_item():
+    """Verify that averaging a single vector returns the vector itself."""
+    v1 = np.array([1.0, 2.0, 3.0])
+    result = calculate_average_vector([v1])
+    assert np.allclose(result, v1)
+
+def test_calculate_average_vector_empty_list():
+    """Verify that passing an empty list raises a specific error."""
+    with pytest.raises(ValueError, match="Cannot calculate average"):
+        calculate_average_vector([])
+
+def test_calculate_average_vector_shape_preservation():
+    """Verify the output vector keeps the same dimensions as input."""
+    # Simulating OpenAI embedding size (1536 dimensions)
+    v1 = np.zeros(1536)
+    v2 = np.ones(1536)
+    result = calculate_average_vector([v1, v2])
+    assert result.shape == (1536,)
+
+def test_similarity_percentage_perfect_match():
+    """Verify distance 0.0 results in 100% similarity."""
+    # Distance 0 means vectors are identical
+    percentage = calculate_similarity_percentage(0.0)
+    assert percentage == 100
+
+def test_similarity_percentage_clipping():
+    """Verify that very large distances don't result in negative percentages."""
+    # Distance 2.0 (max cosine distance) should be 0%, not negative
+    percentage = calculate_similarity_percentage(2.0)
+    assert percentage == 0
+
+# --- Recommendation Logic (Filtering & Sorting) ---
+
+def test_get_recommendations_excludes_user_input():
+    """Critically important: Don't recommend shows the user just said they liked."""
+    user_vector = np.array([10, 10])
+    
+    # DB has the user's show (A) and a new show (B)
+    db_vectors = {
+        "Show A": np.array([10, 10]),  # Perfect match, but inputs should be ignored
+        "Show B": np.array([9, 9])
+    }
+    
+    # We pass "Show A" as the input_shows list to exclude
+    recs = get_recommendations(user_vector, db_vectors, input_shows=["Show A"])
+    
+    rec_titles = [r['title'] for r in recs]
+    assert "Show A" not in rec_titles
+    assert "Show B" in rec_titles
+
+def test_get_recommendations_sort_order():
+    """Verify recommendations are sorted by best match first."""
+    user_vector = np.array([10, 10])
+    db_vectors = {
+        "Mediocre Show": np.array([1, 1]),  # Far away
+        "Great Show": np.array([9, 9])      # Close
+    }
+    
+    recs = get_recommendations(user_vector, db_vectors, input_shows=[])
+    
+    assert recs[0]['title'] == "Great Show"
+    assert recs[1]['title'] == "Mediocre Show"
+
+def test_get_recommendations_limit_results():
+    """Verify the function respects the requested limit (e.g., top 5)."""
+    user_vector = np.array([1, 1])
+    # Create 10 dummy shows
+    db_vectors = {f"Show {i}": np.array([1, 1]) for i in range(10)}
+    
+    # Ask for only 3
+    recs = get_recommendations(user_vector, db_vectors, limit=3, input_shows=[])
+    
+    assert len(recs) == 3
+
+def test_get_recommendations_small_database():
+    """Verify graceful handling if we ask for 5 shows but DB only has 1."""
+    user_vector = np.array([1, 1])
+    db_vectors = {"Lonely Show": np.array([1, 1])}
+    
+    # Ask for 5, but DB is small
+    recs = get_recommendations(user_vector, db_vectors, limit=5, input_shows=[])
+    
+    assert len(recs) == 1
+    assert recs[0]['title'] == "Lonely Show"
+
+def test_get_recommendations_output_format():
+    """Verify the output is a list of dictionaries with specific keys."""
+    user_vector = np.array([1, 1])
+    db_vectors = {"Show A": np.array([1, 1])}
+    
+    recs = get_recommendations(user_vector, db_vectors, input_shows=[])
+    
+    # Each item must be a dict with 'title' and 'percentage'
+    assert isinstance(recs[0], dict)
+    assert 'title' in recs[0]
+    assert 'percentage' in recs[0]
+    assert isinstance(recs[0]['percentage'], int)
+
+def test_get_recommendations_no_candidates():
+    """Verify behavior when all available shows are excluded (user liked everything)."""
+    user_vector = np.array([1, 1])
+    db_vectors = {"Show A": np.array([1, 1])}
+    
+    # User likes the only show in DB
+    recs = get_recommendations(user_vector, db_vectors, input_shows=["Show A"])
+    
+    assert recs == []
