@@ -1,0 +1,18 @@
+# --- Python Internals ---
+__pycache__/
+*.pyc
+
+# --- Virtual Environment ---
+venv/
+env/
+
+.env
+.env.local
+
+*.pkl
+
+.vscode/
+.idea/
+
+Thumbs.db
+.DS_Store
