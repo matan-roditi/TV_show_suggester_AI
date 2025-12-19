@@ -5,7 +5,8 @@ from unittest.mock import patch, mock_open
 from src.matcher import fuzzy_match_shows
 from src.matcher import parse_user_input
 from src.data_handler import load_embeddings, save_embeddings, get_all_titles
-from src.recommender import calculate_average_vector, calculate_similarity_percentage, get_recommendations
+from src.recommender import calculate_average_vector, similarity_to_percentage, cosine_similarity, get_recommendations
+
 
 
 def test_parse_user_input_basic():
@@ -179,15 +180,19 @@ def test_calculate_average_vector_shape_preservation():
     assert result.shape == (1536,)
 
 def test_similarity_percentage_perfect_match():
-    """Verify distance 0.0 results in 100% similarity."""
-    # Distance 0 means vectors are identical
-    percentage = calculate_similarity_percentage(0.0)
+    """Verify identical vectors result in 100% similarity."""
+    v = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    sim = cosine_similarity(v, v)
+    percentage = similarity_to_percentage(sim)
     assert percentage == 100
 
-def test_similarity_percentage_clipping():
-    """Verify that very large distances don't result in negative percentages."""
-    # Distance 2.0 (max cosine distance) should be 0%, not negative
-    percentage = calculate_similarity_percentage(2.0)
+
+def test_similarity_percentage_opposite_vectors():
+    """Verify opposite vectors result in 0% similarity."""
+    v1 = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    v2 = np.array([-1.0, 0.0, 0.0], dtype=np.float32)
+    sim = cosine_similarity(v1, v2)
+    percentage = similarity_to_percentage(sim)
     assert percentage == 0
 
 # --- Recommendation Logic (Filtering & Sorting) ---
@@ -213,9 +218,18 @@ def test_get_recommendations_sort_order():
     """Verify recommendations are sorted by best match first."""
     user_vector = np.array([10, 10])
     db_vectors = {
-        "Mediocre Show": np.array([1, 1]),  # Far away
-        "Great Show": np.array([9, 9])      # Close
+        # This vector points in a different direction (mostly X, little Y)
+        # So it will have a large distance from [10, 10]
+        "Mediocre Show": np.array([10, 1]), 
+        
+        # This vector points in the same direction as user, so distance is small
+        "Great Show": np.array([9, 9])
     }
+    
+    recs = get_recommendations(user_vector, db_vectors, input_shows=[])
+    
+    assert recs[0]['title'] == "Great Show"
+    assert recs[1]['title'] == "Mediocre Show"
     
     recs = get_recommendations(user_vector, db_vectors, input_shows=[])
     

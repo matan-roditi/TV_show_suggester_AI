@@ -77,7 +77,7 @@ def get_recommendations(
             "_sim": sim  # internal sorting key
         })
 
-    recommendations.sort(key=lambda x: x["_sim"], reverse=True)
+    recommendations.sort(key=lambda x: (x["percentage"], x["_sim"]), reverse=True)
     top = recommendations[:limit]
 
     return [{"title": r["title"], "percentage": int(r["percentage"])} for r in top]
