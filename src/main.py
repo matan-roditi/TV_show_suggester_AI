@@ -1,6 +1,6 @@
 import os
 from typing import List
-import numpy as np
+import numpy as np  # <-- add this
 
 from src.data_handler import load_embeddings, get_all_titles
 from src.matcher import parse_user_input, fuzzy_match_shows

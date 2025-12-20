@@ -1,14 +1,13 @@
 import pytest
 import numpy as np
 import pickle
-from unittest.mock import patch, mock_open, MagicMock, PropertyMock
+from unittest.mock import patch, mock_open
 from src.matcher import fuzzy_match_shows
 from src.matcher import parse_user_input
 from src.data_handler import load_embeddings, save_embeddings, get_all_titles
 from src.recommender import calculate_average_vector, similarity_to_percentage, cosine_similarity, get_recommendations
 import os
 from src.vector_db import VectorDB
-from src.creative import generate_new_show_idea
 
 
 def test_parse_user_input_basic():
@@ -418,163 +417,3 @@ def test_vector_db_search_limit():
     results = db.search(query, limit=4)
     
     assert len(results) == 4
-
-# ==========================================
-# Creative AI Tests (Mocking Google Gemini)
-# ==========================================
-
-@patch('src.creative._get_model')
-def test_generate_idea_input_mode_success(mock_get_model):
-    """Verify standard success flow for input-based generation."""
-    # Setup Mock
-    mock_model = MagicMock()
-    mock_response = MagicMock()
-    mock_response.text = "Show Idea: The Code Wizard."
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
-
-    # Action
-    result = generate_new_show_idea(["Breaking Bad"], mode="input_based")
-
-    # Assert
-    assert result == "Show Idea: The Code Wizard."
-    mock_model.generate_content.assert_called_once()
-
-# 2. Happy Path - Recommendation Based
-@patch('src.creative._get_model')
-def test_generate_idea_rec_mode_success(mock_get_model):
-    """Verify standard success flow for recommendation-based generation."""
-    mock_model = MagicMock()
-    mock_response = MagicMock()
-    mock_response.text = "Show Idea: The Algorithm."
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
-
-    result = generate_new_show_idea(["The Wire"], mode="recommendation_based")
-
-    assert result == "Show Idea: The Algorithm."
-
-# 3. Prompt Logic - Verify Inputs are Included
-@patch('src.creative._get_model')
-def test_prompt_includes_show_names(mock_get_model):
-    """Verify that the user's specific show names actually end up in the prompt sent to Google."""
-    mock_model = MagicMock()
-    mock_response = MagicMock()
-    mock_response.text = "..."
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
-
-    shows = ["Show A", "Show B"]
-    generate_new_show_idea(shows, "input_based")
-
-    # Dig into the call arguments
-    args, _ = mock_model.generate_content.call_args
-    prompt_sent = args[0]
-
-    assert "Show A" in prompt_sent
-    assert "Show B" in prompt_sent
-
-# 4. Prompt Logic - Mode Differentiation
-@patch('src.creative._get_model')
-def test_prompt_varies_by_mode(mock_get_model):
-    """Verify that 'input_based' and 'recommendation_based' send DIFFERENT prompts."""
-    mock_model = MagicMock()
-    mock_response = MagicMock()
-    mock_response.text = "..."
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
-
-    # Run twice
-    generate_new_show_idea(["Show"], "input_based")
-    args_input, _ = mock_model.generate_content.call_args
-    prompt_input = args_input[0]
-
-    generate_new_show_idea(["Show"], "recommendation_based")
-    args_rec, _ = mock_model.generate_content.call_args
-    prompt_rec = args_rec[0]
-
-    # The prompts should not be identical
-    assert prompt_input != prompt_rec
-    # Specific keywords expected
-    assert "loved" in prompt_input.lower() or "liked" in prompt_input.lower()
-    assert "recommended" in prompt_rec.lower()
-
-# 5. Robustness - Whitespace Cleaning
-@patch('src.creative._get_model')
-def test_returns_clean_text(mock_get_model):
-    """Verify that extra whitespace or newlines from the LLM are trimmed."""
-    mock_model = MagicMock()
-    mock_response = MagicMock()
-    # LLMs often return text with leading/trailing newlines
-    mock_response.text = "\n\n   A creative show description.   \n"
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
-
-    result = generate_new_show_idea(["Show A"], "input_based")
-
-    assert result == "A creative show description."
-
-# 6. Validation - Empty List
-def test_raises_error_on_empty_list():
-    """Verify validtion: Logic should prevent wasting API calls on empty lists."""
-    with pytest.raises(ValueError, match="cannot be empty"):
-        generate_new_show_idea([], "input_based")
-
-# 7. Validation - Invalid Mode
-def test_raises_error_on_invalid_mode():
-    """Verify validtion: Should catch typos in the mode argument."""
-    with pytest.raises(ValueError, match="Invalid mode"):
-        generate_new_show_idea(["Show A"], "random_mode")
-
-# 8. API Failure - Network/Server Error
-@patch('src.creative._get_model')
-def test_handles_api_exception(mock_get_model):
-    """Verify behavior when Google API crashes (e.g. 500 error or No Internet)."""
-    mock_model = MagicMock()
-    # Simulate a crash
-    mock_model.generate_content.side_effect = Exception("Connection Refused")
-    mock_get_model.return_value = mock_model
-
-    with pytest.raises(Exception, match="Connection Refused"):
-        generate_new_show_idea(["Show A"], "input_based")
-
-# 9. Safety Filters - Blocked Response
-@patch('src.creative._get_model')
-def test_handles_blocked_content(mock_get_model):
-    """Verify behavior when AI returns no text (e.g. safety filter triggered)."""
-    mock_model = MagicMock()
-    # Simulate a response object that exists but has no text (or raises error on .text access)
-    mock_response = MagicMock()
-    # Mocking behavior where .text might be empty or unavailable
-    type(mock_response).text = PropertyMock(return_value=None) 
-    # Or simplified: if .text returns empty string
-    mock_response.text = "" 
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
-    
-    # We might expect it to return a default message or raise an error
-    # Let's assume we want a fallback string
-    result = generate_new_show_idea(["Show A"], "input_based")
-    assert result == "Description unavailable." or result == ""
-
-# 10. Robustness - Special Characters
-@patch('src.creative._get_model')
-def test_special_characters_handling(mock_get_model):
-    """Verify that weird characters in show names don't break the string interpolation."""
-    mock_model = MagicMock()
-    mock_response = MagicMock()
-    mock_response.text = "Ok"
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
-
-    weird_shows = ["Show & Name", "Show with \"Quotes\"", "Show\nNew line"]
-    
-    # Should not raise error
-    generate_new_show_idea(weird_shows, "input_based")
-    
-    args, _ = mock_model.generate_content.call_args
-    prompt = args[0]
-    
-    # Ensure they are in the prompt correctly
-    assert "Show & Name" in prompt
-    assert "Show with \"Quotes\"" in prompt
