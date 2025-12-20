@@ -280,3 +280,50 @@ def test_get_recommendations_no_candidates():
     recs = get_recommendations(user_vector, db_vectors, input_shows=["Show A"])
     
     assert recs == []
+
+def test_calculate_average_vector_negatives():
+    """Verify math works correctly with negative numbers (common in embeddings)."""
+    # Vector 1: [1.0, -1.0]
+    # Vector 2: [-1.0, 1.0]
+    # Average should be [0.0, 0.0]
+    v1 = np.array([1.0, -1.0])
+    v2 = np.array([-1.0, 1.0])
+    
+    result = calculate_average_vector([v1, v2])
+    expected = np.array([0.0, 0.0])
+    assert np.allclose(result, expected)
+
+def test_calculate_average_vector_mismatched_dimensions():
+    """Critical: Verify that we cannot average vectors of different lengths."""
+    # OpenAI vector is length 1536. If we accidentally mix in a length 100 vector,
+    # the math will break or be meaningless. We expect an error.
+    v1 = np.array([1.0, 2.0])
+    v2 = np.array([1.0, 2.0, 3.0]) # Different length!
+    
+    # NumPy usually raises a ValueError here, or we should catch it.
+    with pytest.raises(ValueError):
+        calculate_average_vector([v1, v2])
+
+def test_calculate_average_vector_large_variance():
+    """Verify average works when vectors are very far apart."""
+    v1 = np.array([1000.0, 1000.0])
+    v2 = np.array([-1000.0, -1000.0])
+    # Average should still be exactly 0
+    result = calculate_average_vector([v1, v2])
+    assert np.allclose(result, np.array([0.0, 0.0]))
+
+def test_calculate_average_vector_many_vectors():
+    """Verify performance/logic on a larger list of vectors (e.g. user liked 100 shows)."""
+    # Create 100 vectors, all equal to [1, 1]
+    vectors = [np.array([1.0, 1.0]) for _ in range(100)]
+    
+    result = calculate_average_vector(vectors)
+    # Average of identical numbers is the number itself
+    assert np.allclose(result, np.array([1.0, 1.0]))
+
+def test_calculate_average_vector_invalid_types():
+    """Verify that the function fails if the list contains None or non-arrays."""
+    vectors = [np.array([1.0, 2.0]), None] # Invalid input
+    
+    with pytest.raises((TypeError, ValueError, AttributeError)):
+        calculate_average_vector(vectors)
