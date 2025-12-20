@@ -12,10 +12,36 @@ def calculate_average_vector(vectors: list[np.ndarray]) -> np.ndarray:
         A single numpy array representing the element-wise mean of the input vectors
     
     Raises:
-        ValueError: If the input list is empty
+        ValueError: If the input list is empty or contains vectors of different dimensions
+        TypeError: If the list contains None or non-array items
     """
+    # Check if the input list is empty
     if not vectors:
         raise ValueError("Cannot calculate average of an empty list")
+    
+    # Check for None or invalid items and get the reference shape
+    reference_shape = None
+    for i, vec in enumerate(vectors):
+        # Check if item is None or not a numpy array
+        if vec is None:
+            raise TypeError(f"Item at index {i} is None, expected numpy array")
+        
+        try:
+            # Ensure it's a numpy array
+            if not isinstance(vec, np.ndarray):
+                raise TypeError(f"Item at index {i} is not a numpy array, got {type(vec)}")
+        except (AttributeError, TypeError):
+            raise TypeError(f"Item at index {i} is not a valid numpy array")
+        
+        # Check dimensions match
+        if reference_shape is None:
+            reference_shape = vec.shape
+        elif vec.shape != reference_shape:
+            raise ValueError(
+                f"Vector at index {i} has shape {vec.shape}, "
+                f"but expected shape {reference_shape}. "
+                f"All vectors must have the same dimensions."
+            )
     
     return np.mean(vectors, axis=0)
 
