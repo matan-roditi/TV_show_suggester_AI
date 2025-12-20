@@ -33,16 +33,14 @@ def fuzzy_match_shows(user_shows: list[str], shows_db: list[str], threshold: int
     Returns:
         A list of matched show names from the database in the same order as user input
     """
-    if not shows_db:
+    if not user_shows or not shows_db:
         return []
-    
-    matched_shows = []
-    
+
+    matched_shows: list[str] = []
+
     for user_show in user_shows:
         match = process.extractOne(user_show, shows_db)
-        
-        # If match is None or score is below threshold, skip it
         if match and match[1] >= threshold:
             matched_shows.append(match[0])
-    
+
     return matched_shows
