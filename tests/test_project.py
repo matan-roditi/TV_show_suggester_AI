@@ -6,7 +6,8 @@ from src.matcher import fuzzy_match_shows
 from src.matcher import parse_user_input
 from src.data_handler import load_embeddings, save_embeddings, get_all_titles
 from src.recommender import calculate_average_vector, similarity_to_percentage, cosine_similarity, get_recommendations
-
+import os
+from src.vector_db import VectorDB
 
 
 def test_parse_user_input_basic():
@@ -327,3 +328,92 @@ def test_calculate_average_vector_invalid_types():
     
     with pytest.raises((TypeError, ValueError, AttributeError)):
         calculate_average_vector(vectors)
+
+# ==========================================
+# Efficient Vector Search (usearch)
+# ==========================================
+
+def test_vector_db_build_and_search():
+    """Verify we can add vectors and find the nearest neighbor accurately."""
+    # Create DB for 2D vectors
+    db = VectorDB(dimension=2)
+    
+    # Add 3 items with specific integer IDs
+    # 1: [1, 0], 2: [0, 1], 3: [-1, 0]
+    data = {
+        1: np.array([1.0, 0.0], dtype=np.float32),
+        2: np.array([0.0, 1.0], dtype=np.float32),
+        3: np.array([-1.0, 0.0], dtype=np.float32)
+    }
+    db.build_index(data)
+    
+    # Query with [1, 0] -> Should match ID 1 perfectly
+    query = np.array([1.0, 0.0], dtype=np.float32)
+    results = db.search(query, limit=1)
+    
+    # Results is expected to be a list of (id, distance) tuples
+    assert results[0][0] == 1
+    # Distance should be very close to 0 (floating point epsilon)
+    assert results[0][1] < 0.001
+
+def test_vector_db_cosine_sorting():
+    """Verify that results are sorted by cosine distance (closest first)."""
+    db = VectorDB(dimension=2)
+    data = {
+        10: np.array([1.0, 0.1], dtype=np.float32), # Very close
+        20: np.array([0.0, 1.0], dtype=np.float32), # Far (Orthogonal)
+        30: np.array([0.9, 0.1], dtype=np.float32)  # Pretty close
+    }
+    db.build_index(data)
+    
+    query = np.array([1.0, 0.0], dtype=np.float32)
+    results = db.search(query, limit=3)
+    
+    # Order should be: 10 (closest), 30 (next), 20 (farthest)
+    ids = [r[0] for r in results]
+    assert ids == [10, 30, 20]
+
+def test_vector_db_save_and_load(tmp_path):
+    """Verify we can save the index to disk and load it back (Offline/Online split)."""
+    # tmp_path is a built-in pytest fixture for creating temp files
+    index_path = str(tmp_path / "test_index.usearch")
+    
+    # 1. Create and Save
+    db_orig = VectorDB(dimension=2)
+    db_orig.build_index({5: np.array([1.0, 1.0], dtype=np.float32)})
+    db_orig.save_index(index_path)
+    
+    assert os.path.exists(index_path)
+    
+    # 2. Load into new instance
+    db_new = VectorDB(dimension=2)
+    db_new.load_index(index_path)
+    
+    # 3. Search should still work
+    query = np.array([1.0, 1.0], dtype=np.float32)
+    results = db_new.search(query, limit=1)
+    assert results[0][0] == 5
+
+def test_vector_db_dimension_mismatch_error():
+    """Verify we get an error if we try to add vectors of wrong size."""
+    db = VectorDB(dimension=3) # Index expects size 3
+    
+    bad_data = {
+        1: np.array([1.0, 2.0], dtype=np.float32) # Size 2!
+    }
+    
+    # Should raise ValueError (or RuntimeError from usearch)
+    with pytest.raises(ValueError):
+        db.build_index(bad_data)
+
+def test_vector_db_search_limit():
+    """Verify that the 'limit' parameter is respected."""
+    db = VectorDB(dimension=2)
+    # Add 10 items
+    data = {i: np.array([1.0, 1.0], dtype=np.float32) for i in range(10)}
+    db.build_index(data)
+    
+    query = np.array([1.0, 1.0], dtype=np.float32)
+    results = db.search(query, limit=4)
+    
+    assert len(results) == 4
