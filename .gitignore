@@ -18,3 +18,4 @@ Thumbs.db
 .DS_Store
 
 data/embeddings.pkl
+data/vector_index.usearch

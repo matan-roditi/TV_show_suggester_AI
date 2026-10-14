@@ -1,5 +1,7 @@
 import numpy as np
 
+from src.vector_db import VectorDB
+
 
 def calculate_average_vector(vectors: list[np.ndarray]) -> np.ndarray:
     """
@@ -101,6 +103,59 @@ def get_recommendations(
             "title": title,
             "percentage": percentage,
             "_sim": sim  # internal sorting key
+        })
+
+    recommendations.sort(key=lambda x: (x["percentage"], x["_sim"]), reverse=True)
+    top = recommendations[:limit]
+
+    return [{"title": r["title"], "percentage": int(r["percentage"])} for r in top]
+
+
+def get_recommendations_vectordb(
+    user_vector: np.ndarray,
+    vector_db: VectorDB,
+    id_to_title: dict[int, str],
+    vectors_by_title: dict[str, np.ndarray],
+    limit: int = 5,
+    input_shows: list[str] | None = None
+) -> list[dict[str, int | str]]:
+    """
+    Get recommendations using an ANN index (VectorDB) instead of a brute-force scan.
+
+    Shortlists nearest neighbors via usearch, then rescoring the shortlist with
+    exact cosine similarity (ANN search is approximate; scores shown to the user
+    should be exact). vectors_by_title is used for rescoring rather than
+    vector_db.id_to_vector, since a VectorDB loaded from disk via load_index()
+    does not repopulate that in-memory cache.
+
+    Returns:
+        A list of dictionaries with keys 'title' and 'percentage',
+        sorted by best match first.
+    """
+    if input_shows is None:
+        input_shows = []
+    excluded_ids = {
+        id_ for id_, title in id_to_title.items() if title in input_shows
+    }
+
+    # Over-fetch so that excluded (input) shows don't shrink the final result below `limit`.
+    fetch_count = limit + len(excluded_ids)
+    results = vector_db.search(user_vector, limit=fetch_count)
+
+    recommendations: list[dict[str, float | int | str]] = []
+    for id_, _distance in results:
+        if id_ in excluded_ids:
+            continue
+
+        title = id_to_title[id_]
+        show_vector = vectors_by_title[title]
+        sim = cosine_similarity(user_vector, show_vector)
+        percentage = similarity_to_percentage(sim)
+
+        recommendations.append({
+            "title": title,
+            "percentage": percentage,
+            "_sim": sim
         })
 
     recommendations.sort(key=lambda x: (x["percentage"], x["_sim"]), reverse=True)
