@@ -1,0 +1,7 @@
+numpy
+pandas
+thefuzz[speedup]
+usearch
+google-genai
+python-dotenv
+pytest
