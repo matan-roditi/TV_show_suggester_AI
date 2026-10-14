@@ -423,72 +423,72 @@ def test_vector_db_search_limit():
 # Creative AI Tests (Mocking Google Gemini)
 # ==========================================
 
-@patch('src.creative._get_model')
-def test_generate_idea_input_mode_success(mock_get_model):
+@patch('src.creative._get_client')
+def test_generate_idea_input_mode_success(mock_get_client):
     """Verify standard success flow for input-based generation."""
     # Setup Mock
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.text = "Show Idea: The Code Wizard."
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
 
     # Action
     result = generate_new_show_idea(["Breaking Bad"], mode="input_based")
 
     # Assert
     assert result == "Show Idea: The Code Wizard."
-    mock_model.generate_content.assert_called_once()
+    mock_client.models.generate_content.assert_called_once()
 
-@patch('src.creative._get_model')
-def test_generate_idea_rec_mode_success(mock_get_model):
+@patch('src.creative._get_client')
+def test_generate_idea_rec_mode_success(mock_get_client):
     """Verify standard success flow for recommendation-based generation."""
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.text = "Show Idea: The Algorithm."
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
 
     result = generate_new_show_idea(["The Wire"], mode="recommendation_based")
 
     assert result == "Show Idea: The Algorithm."
 
-@patch('src.creative._get_model')
-def test_prompt_includes_show_names(mock_get_model):
+@patch('src.creative._get_client')
+def test_prompt_includes_show_names(mock_get_client):
     """Verify that the user's specific show names actually end up in the prompt sent to Google."""
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.text = "..."
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
 
     shows = ["Show A", "Show B"]
     generate_new_show_idea(shows, "input_based")
 
     # Dig into the call arguments
-    args, _ = mock_model.generate_content.call_args
-    prompt_sent = args[0]
+    _, kwargs = mock_client.models.generate_content.call_args
+    prompt_sent = kwargs["contents"]
 
     assert "Show A" in prompt_sent
     assert "Show B" in prompt_sent
 
-@patch('src.creative._get_model')
-def test_prompt_varies_by_mode(mock_get_model):
+@patch('src.creative._get_client')
+def test_prompt_varies_by_mode(mock_get_client):
     """Verify that 'input_based' and 'recommendation_based' send DIFFERENT prompts."""
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.text = "..."
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
 
     # Run twice
     generate_new_show_idea(["Show"], "input_based")
-    args_input, _ = mock_model.generate_content.call_args
-    prompt_input = args_input[0]
+    _, kwargs_input = mock_client.models.generate_content.call_args
+    prompt_input = kwargs_input["contents"]
 
     generate_new_show_idea(["Show"], "recommendation_based")
-    args_rec, _ = mock_model.generate_content.call_args
-    prompt_rec = args_rec[0]
+    _, kwargs_rec = mock_client.models.generate_content.call_args
+    prompt_rec = kwargs_rec["contents"]
 
     # The prompts should not be identical
     assert prompt_input != prompt_rec
@@ -496,15 +496,15 @@ def test_prompt_varies_by_mode(mock_get_model):
     assert "loved" in prompt_input.lower() or "liked" in prompt_input.lower()
     assert "recommended" in prompt_rec.lower()
 
-@patch('src.creative._get_model')
-def test_returns_clean_text(mock_get_model):
+@patch('src.creative._get_client')
+def test_returns_clean_text(mock_get_client):
     """Verify that extra whitespace or newlines from the LLM are trimmed."""
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     mock_response = MagicMock()
     # LLMs often return text with leading/trailing newlines
     mock_response.text = "\n\n   A creative show description.   \n"
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
 
     result = generate_new_show_idea(["Show A"], "input_based")
 
@@ -520,52 +520,52 @@ def test_raises_error_on_invalid_mode():
     with pytest.raises(ValueError, match="Invalid mode"):
         generate_new_show_idea(["Show A"], "random_mode")
 
-@patch('src.creative._get_model')
-def test_handles_api_exception(mock_get_model):
+@patch('src.creative._get_client')
+def test_handles_api_exception(mock_get_client):
     """Verify behavior when Google API crashes (e.g. 500 error or No Internet)."""
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     # Simulate a crash
-    mock_model.generate_content.side_effect = Exception("Connection Refused")
-    mock_get_model.return_value = mock_model
+    mock_client.models.generate_content.side_effect = Exception("Connection Refused")
+    mock_get_client.return_value = mock_client
 
     with pytest.raises(Exception, match="Connection Refused"):
         generate_new_show_idea(["Show A"], "input_based")
 
-@patch('src.creative._get_model')
-def test_handles_blocked_content(mock_get_model):
+@patch('src.creative._get_client')
+def test_handles_blocked_content(mock_get_client):
     """Verify behavior when AI returns no text (e.g. safety filter triggered)."""
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     # Simulate a response object that exists but has no text (or raises error on .text access)
     mock_response = MagicMock()
     # Mocking behavior where .text might be empty or unavailable
-    type(mock_response).text = PropertyMock(return_value=None) 
+    type(mock_response).text = PropertyMock(return_value=None)
     # Or simplified: if .text returns empty string
-    mock_response.text = "" 
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
-    
+    mock_response.text = ""
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
     # We might expect it to return a default message or raise an error
     # Let's assume we want a fallback string
     result = generate_new_show_idea(["Show A"], "input_based")
     assert result == "Description unavailable." or result == ""
 
-@patch('src.creative._get_model')
-def test_special_characters_handling(mock_get_model):
+@patch('src.creative._get_client')
+def test_special_characters_handling(mock_get_client):
     """Verify that weird characters in show names don't break the string interpolation."""
-    mock_model = MagicMock()
+    mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.text = "Ok"
-    mock_model.generate_content.return_value = mock_response
-    mock_get_model.return_value = mock_model
+    mock_client.models.generate_content.return_value = mock_response
+    mock_get_client.return_value = mock_client
 
     weird_shows = ["Show & Name", "Show with \"Quotes\"", "Show\nNew line"]
-    
+
     # Should not raise error
     generate_new_show_idea(weird_shows, "input_based")
-    
-    args, _ = mock_model.generate_content.call_args
-    prompt = args[0]
-    
+
+    _, kwargs = mock_client.models.generate_content.call_args
+    prompt = kwargs["contents"]
+
     # Ensure they are in the prompt correctly
     assert "Show & Name" in prompt
     assert "Show with \"Quotes\"" in prompt
