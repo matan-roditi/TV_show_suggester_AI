@@ -37,7 +37,7 @@ def generate_new_show_idea(
         raise ValueError("source_shows cannot be empty")
 
     if mode not in ("input_based", "recommendation_based"):
-        raise ValueError("mode must be 'input_based' or 'recommendation_based'")
+        raise ValueError("Invalid mode: must be 'input_based' or 'recommendation_based'")
 
     shows_str = ", ".join(source_shows)
 
@@ -63,8 +63,7 @@ def generate_new_show_idea(
         )
 
     client = _get_client()
-    model = client.models.get("gemini-1.5-flash")
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
 
     text = getattr(response, "text", None)
     return text.strip() if text else "Description unavailable."
